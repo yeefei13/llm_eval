@@ -1,0 +1,7 @@
+pandas
+faiss-gpu
+accelerate
+bitsandbytes
+pyarrow
+transformers
+sentence-transformers
