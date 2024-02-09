@@ -1,0 +1,3 @@
+llm1,llm2
+an opensource framework that helps making llm pipeline,a platform to do end to end ML project
+a react function that defines how to react after a render(you can pass in a function),"if you give a function to useeffect, it will call it when it renders content"
