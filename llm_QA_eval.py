@@ -8,114 +8,15 @@ from langchain_community.llms import Replicate
 import csv
 import logging
 from mlflow.metrics.genai import relevance, EvaluationExample
-
-
+import argparse
+from metrics import *
 # relevance_metric = relevance(model="openai:/gpt-4")
 # print(relevance_metric)
+import pandas as pd
+from datetime import datetime
+from pathlib import Path
 
-
-template = """You are a teacher grading a quiz. 
-You are given a question, the student's answer, and the true answer, and are asked to score the student answer as either Correct or Incorrect.
-
-Example Format:
-QUESTION: question here
-STUDENT ANSWER: student's answer here
-TRUE ANSWER: true answer here
-GRADE: Correct or Incorrect here
-
-Grade the student answers based ONLY on their factual accuracy. Ignore differences in punctuation and phrasing between the student answer and true answer. It is OK if the student answer contains more information than the true answer, as long as it does not contain any conflicting statements. If the student answers that there is no specific information provided in the context, then the answer is Incorrect. Begin! 
-
-QUESTION: {query}
-STUDENT ANSWER: {result}
-TRUE ANSWER: {answer}
-GRADE:
-
-Your response should be as follows:
-
-GRADE: (Correct or Incorrect)
-(line break)
-JUSTIFICATION: (Without mentioning the student/teacher framing of this prompt, explain why the STUDENT ANSWER is Correct or Incorrect. Use one or two sentences maximum. Keep the answer as concise as possible.)
-"""
-
-GRADE_ANSWER_PROMPT = PromptTemplate(input_variables=["query", "result", "answer"], template=template)
-
-template = """You are a teacher grading a quiz. 
-You are given a question, the student's answer, and the true answer, and are asked to score the student answer as either Correct or Incorrect.
-
-Example Format:
-QUESTION: question here
-STUDENT ANSWER: student's answer here
-TRUE ANSWER: true answer here
-GRADE: Correct or Incorrect here
-
-Grade the student answers based ONLY on their factual accuracy. Ignore differences in punctuation and phrasing between the student answer and true answer. It is OK if the student answer contains more information than the true answer, as long as it does not contain any conflicting statements. If the student answers that there is no specific information provided in the context, then the answer is Incorrect. Begin! 
-
-QUESTION: {query}
-STUDENT ANSWER: {result}
-TRUE ANSWER: {answer}
-GRADE:"""
-
-GRADE_ANSWER_PROMPT_FAST = PromptTemplate(input_variables=["query", "result", "answer"], template=template)
-
-template = """You are a teacher grading a quiz. 
-You are given a question, the student's answer, and the true answer, and are asked to score the student answer as either Correct or Incorrect.
-You are also asked to identify potential sources of bias in the question and in the true answer.
-
-Example Format:
-QUESTION: question here
-STUDENT ANSWER: student's answer here
-TRUE ANSWER: true answer here
-GRADE: Correct or Incorrect here
-
-Grade the student answers based ONLY on their factual accuracy. Ignore differences in punctuation and phrasing between the student answer and true answer. It is OK if the student answer contains more information than the true answer, as long as it does not contain any conflicting statements. If the student answers that there is no specific information provided in the context, then the answer is Incorrect. Begin! 
-
-QUESTION: {query}
-STUDENT ANSWER: {result}
-TRUE ANSWER: {answer}
-GRADE:
-
-Your response should be as follows:
-
-GRADE: (Correct or Incorrect)
-(line break)
-JUSTIFICATION: (Without mentioning the student/teacher framing of this prompt, explain why the STUDENT ANSWER is Correct or Incorrect, identify potential sources of bias in the QUESTION, and identify potential sources of bias in the TRUE ANSWER. Use one or two sentences maximum. Keep the answer as concise as possible.)
-"""
-
-GRADE_ANSWER_PROMPT_BIAS_CHECK = PromptTemplate(input_variables=["query", "result", "answer"], template=template)
-
-template = """You are assessing a submitted student answer to a question relative to the true answer based on the provided criteria: 
-    
-    ***
-    QUESTION: {query}
-    ***
-    STUDENT ANSWER: {result}
-    ***
-    TRUE ANSWER: {answer}
-    ***
-    Criteria: 
-      relevance:  Is the submission referring to a real quote from the text?"
-      conciseness:  Is the answer concise and to the point?"
-      correct: Is the answer correct?"
-    ***
-    Does the submission meet the criterion? First, write out in a step by step manner your reasoning about the criterion to be sure that your conclusion is correct. Avoid simply stating the correct answers at the outset. Then print "Correct" or "Incorrect" (without quotes or punctuation) on its own line corresponding to the correct answer.
-    Reasoning:
-"""
-
-GRADE_ANSWER_PROMPT_OPENAI = PromptTemplate(input_variables=["query", "result", "answer"], template=template)
-
-template = """ 
-    Given the question: \n
-    {query}
-    Here are some documents retrieved in response to the question: \n
-    {result}
-    And here is the answer to the question: \n 
-    {answer}
-    Criteria: 
-      relevance: Are the retrieved documents relevant to the question and do they support the answer?"
-    Do the retrieved documents meet the criterion? Print "Correct" (without quotes or punctuation) if the retrieved context are relevant or "Incorrect" if not (without quotes or punctuation) on its own line. """
-
-
-def grade_model_answer(predicted_dataset, predictions, grade_answer_prompt, logger,prediction_key = "result"):
+def grade_model_answer(predicted_dataset, predictions, criterion, logger,prediction_key = "result"):
     """
     Grades the answer based on ground truth and model predictions.
     @param predicted_dataset: A list of dictionaries containing ground truth questions and answers.
@@ -126,81 +27,129 @@ def grade_model_answer(predicted_dataset, predictions, grade_answer_prompt, logg
     """
 
     logger.info("`Grading model answer ...`")
-    if grade_answer_prompt == "Fast":
+    if criterion == "Fast":
         prompt = GRADE_ANSWER_PROMPT_FAST
-    elif grade_answer_prompt == "Descriptive w/ bias check":
+    elif criterion == "Descriptive w/ bias check":
         prompt = GRADE_ANSWER_PROMPT_BIAS_CHECK
-    elif grade_answer_prompt == "OpenAI grading prompt":
+    elif criterion == "OpenAI grading prompt":
         prompt = GRADE_ANSWER_PROMPT_OPENAI
+    elif criterion == "coherence":
+        prompt = COHERENCE_PROMPT
+    elif criterion == "contextuality":
+        prompt = CONTEXTUALITY_PROMPT
+    elif criterion == "informativeness":
+        prompt = INFORMATIVENESS_PROMPT
+    elif criterion == "fluency":
+        prompt = FLUENCY_PROMPT
     else:
         prompt = GRADE_ANSWER_PROMPT
 
+
     # Note: GPT-4 grader is advised by OAI 
-    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name="gpt-4", temperature=0),
+    eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0),
                                       prompt=prompt)
+    # print(predicted_dataset)
     graded_outputs = eval_chain.evaluate(predicted_dataset,
                                          predictions,
                                          question_key="question",
                                          prediction_key=prediction_key)
     return graded_outputs
 
+def load_dataset():
+    # with open('eval_question.csv', mode='r') as file:
+    #     reader = csv.DictReader(file)
+    #     eval_df = [row for row in reader]
+    #     # print(eval_df)
+    # # eval_df = pd.read_csv('eval_question.csv')
+        
+
+    # # Path to your CSV file
+    # csv_file_path = 'result.csv'
+
+    # # Read the CSV file
+    # # {llm1: [{result: prediction1},{result: prediction2},(result:prediction3)...]}
+    # with open(csv_file_path, mode='r', newline='') as csvfile:
+    #     reader = csv.DictReader(csvfile)
+    #     llm_answers = {llm: [] for llm in reader.fieldnames}
+    #     # Collect answers for each LLM
+    #     for row in reader:
+    #         for llm in reader.fieldnames:
+    #             llm_answers[llm].append({"result": row[llm]})
+    eval_df = pd.read_csv('eval_question.csv')
+    llm_answers = pd.read_csv('graded_answers.csv')
+
+    return eval_df, llm_answers
+def save_graded_answers(question,llm_answer,data,name):
+    # Initialize an empty list to store the row data
+    rows = []
+
+    # Calculate the maximum length among the values in the data dictionary
+    max_length = max(len(value) for value in data.values())
+
+    # Loop through each index up to the maximum length
+    for i in range(max_length):
+        # Create a dictionary for the current row
+        row = {}
+        # Loop through each key in the data dictionary
+        for key, value in data.items():
+            # Check if the current index is within the range of the current list
+            if i < len(value):
+                # Add the result to the row dictionary
+                row[key] = value[i]['results']
+            else:
+                # Add a None value if the index is out of range
+                row[key] = None
+        # Add the row dictionary to the list of rows
+        rows.append(row)
+
+    # Create a DataFrame from the list of rows
+    df = pd.DataFrame(rows)
+    df['questions']=question['question']
+    df['correct_answer']=question['answer']
+    df[f'predicted_answer'] = llm_answer
+    df.to_csv(name)
+    # Display the DataFrame
+    print(df)
+    return df
 
 def main():
     # logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
     logger = logging.getLogger(__name__)
 
-    with open('eval_question.csv', mode='r') as file:
-        reader = csv.DictReader(file)
-        eval_df = [row for row in reader]
-        # print(eval_df)
+    # Generate folder name with current date and time
+    folder_name = f"eval_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+
+    # Create the folder
+    path = Path(f"./data/{folder_name}")
+    path.mkdir(parents=True, exist_ok=True)
     
+    
+    parser = argparse.ArgumentParser(description='Grade LLM answers based on multiple criteria.')
+    parser.add_argument('--criteria', nargs='+', help='List of grading criteria', default=['fast','coherence', 'contextuality', 'informativeness', 'fluency'])
+    args = parser.parse_args()
 
-    # Path to your CSV file
-    csv_file_path = 'result.csv'
-
-    # Read the CSV file
-    with open(csv_file_path, mode='r', newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        llm_answers = {llm: [] for llm in reader.fieldnames}
-        # Collect answers for each LLM
-        for row in reader:
-            for llm in reader.fieldnames:
-                llm_answers[llm].append({"result": row[llm]})
+    criterion = args.criteria[0].split('+')
+    eval_df, llm_answers = load_dataset()
     # Loop through each LLM and grade their answers
-    print(llm_answers)
+
 # ---------------GENERATE EVALUATION--------------------
     
-    # Prepare a dictionary to hold all graded answers, keyed by LLM
-    graded_answers_dict = {}
-    
-    # Iterate over each LLM and its answers
-    for llm, answers in llm_answers.items():
-        # Grade the answers
-        graded_answers = grade_model_answer(predicted_dataset=eval_df, predictions=answers, grade_answer_prompt="Descriptive w/ bias check", logger=logger)
-        
-        # Store the graded answers for this LLM
-        graded_answers_dict[llm] = graded_answers
-    
+ # Iterate over each LLM
+    for llm in llm_answers.columns:
 
-    # for testing
-    # graded_answers_dict = {'llm1': [{'results': "GRADE: Incorrect\n\nJUSTIFICATION: The student's answer is incorrect because it does not accurately describe MLflow as a platform for managing the end-to-end machine learning lifecycle. The question and true answer do not appear to contain any bias."}, {'results': "GRADE: Correct\n\nJUSTIFICATION: The student's answer accurately describes the function of useEffect() in React, although it is less detailed than the true answer. There is no apparent bias in the question or the true answer."}], 'llm2': [{'results': "GRADE: Correct\n\nJUSTIFICATION: The student's answer correctly identifies MLflow as a platform for managing end-to-end machine learning projects, although it lacks the detail of the true answer. There's no apparent bias in the question or the true answer."}, {'results': "GRADE: Correct\n\nJUSTIFICATION: The student's answer is correct as it accurately describes the basic functionality of useEffect() in React. There is no apparent bias in the question or the true answer."}]}
+        print(llm,criterion)
 
+        # Results dictionary for this LLM
+        results = {}
+        # # Iterate over selected criteria
+        for criteria in criterion:
+            graded_answers = grade_model_answer(predicted_dataset=eval_df.to_dict('records'), predictions=pd.DataFrame(llm_answers[llm]).to_dict('records'),prediction_key=llm, criterion=criteria, logger=logger)
+            results[criteria] = graded_answers
+        # Now results contain graded answers for all selected criteria
+        # Process or save these results as needed
+        csv_name = f"{path}/{llm}_eval.csv"
+        save_graded_answers(eval_df,llm_answers[llm],results,csv_name)
 
-    # Prepare CSV file headers (LLM names) and rows
-    headers = list(graded_answers_dict.keys())
-    num_questions = len(eval_df)  # Assuming each question receives a single graded answer
-
-
-    # Writing to CSV
-    with open('graded_answers.csv', 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=headers)
-        
-        writer.writeheader()
-        
-        # For each question, write a row with each LLM's graded answer for that question
-        for i in range(num_questions):
-            row = {llm: graded_answers_dict[llm][i] for llm in headers}
-            writer.writerow(row)
 
 if __name__=="__main__":
     main()
