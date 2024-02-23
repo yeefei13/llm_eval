@@ -15,12 +15,6 @@ from metrics import *
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
 
 def grade_model_answer(predicted_dataset, predictions, criterion, logger,prediction_key = "result"):
     """
@@ -31,14 +25,17 @@ def grade_model_answer(predicted_dataset, predictions, criterion, logger,predict
     @param logger: logger
     @return: A list of scores for the distilled answers.
     """
-    with_context = False
+
     logger.info("`Grading model answer ...`")
-    if criterion == "correctness":
-        prompt = GRADE_ANSWER_PROMPT
+    if criterion == "Fast":
+        prompt = GRADE_ANSWER_PROMPT_FAST
+    elif criterion == "Descriptive w/ bias check":
+        prompt = GRADE_ANSWER_PROMPT_BIAS_CHECK
+    elif criterion == "OpenAI grading prompt":
+        prompt = GRADE_ANSWER_PROMPT_OPENAI
     elif criterion == "coherence":
         prompt = COHERENCE_PROMPT
     elif criterion == "contextuality":
-        with_context = True
         prompt = CONTEXTUALITY_PROMPT
     elif criterion == "informativeness":
         prompt = INFORMATIVENESS_PROMPT
@@ -47,37 +44,16 @@ def grade_model_answer(predicted_dataset, predictions, criterion, logger,predict
     else:
         prompt = GRADE_ANSWER_PROMPT
 
+
     # Note: GPT-4 grader is advised by OAI 
     eval_chain = QAEvalChain.from_llm(llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0),
-                                    prompt=prompt)
-    if with_context:
-        # Loop through each item in the dataset and evaluate it
-        for item in predicted_dataset:
-            # Ensure the item contains 'context', 'question', and the prediction key (e.g., 'result')
-            context_file_path = item.get('context', '')
-
-            # Assuming 'context' is a path to the file containing the context information
-            # and you want to read this file's content into the 'answer' field
-            try:
-                with open(context_file_path, 'r', encoding='utf-8') as file:
-                    context_content = file.read()
-                # Update the 'answer' field with the content of the context file
-                item['answer'] = context_content
-            except FileNotFoundError:
-                logger.error(f"File not found: {context_file_path}")
-                item['answer'] = "Error: Context file not found."
-                    
-        graded_outputs = eval_chain.evaluate(predicted_dataset,predictions, question_key="question", prediction_key=prediction_key)
-    else:
-
-        # print(predicted_dataset)
-        graded_outputs = eval_chain.evaluate(predicted_dataset,
-                                            predictions,
-                                            question_key="question",
-                                            prediction_key=prediction_key)
-    logger.info(graded_outputs)
+                                      prompt=prompt)
+    # print(predicted_dataset)
+    graded_outputs = eval_chain.evaluate(predicted_dataset,
+                                         predictions,
+                                         question_key="question",
+                                         prediction_key=prediction_key)
     return graded_outputs
-
 
 def load_dataset():
     # with open('eval_question.csv', mode='r') as file:
@@ -149,20 +125,19 @@ def main():
     
     
     parser = argparse.ArgumentParser(description='Grade LLM answers based on multiple criteria.')
-    parser.add_argument('--criteria', nargs='+', help='List of grading criteria', default=['correctness','coherence', 'contextuality', 'informativeness', 'fluency'])
+    parser.add_argument('--criteria', nargs='+', help='List of grading criteria', default=['fast','coherence', 'contextuality', 'informativeness', 'fluency'])
     args = parser.parse_args()
-    if len(args.criteria) == 1:
-        criterion = args.criteria[0].split('+')
-    else:
-        criterion = args.criteria
+
+    criterion = args.criteria[0].split('+')
     eval_df, llm_answers = load_dataset()
     # Loop through each LLM and grade their answers
 
 # ---------------GENERATE EVALUATION--------------------
-    logger.info(f"grading based on criterion: {criterion}")
+    
  # Iterate over each LLM
     for llm in llm_answers.columns:
-        logger.info(f"Currently grading llm {llm}")
+
+        print(llm,criterion)
 
         # Results dictionary for this LLM
         results = {}

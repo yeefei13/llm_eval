@@ -1,4 +1,3 @@
-question,answer,context
-What are the unanswered questions?,"The unanswered questions include how well LLM judges reflect human preferences in terms of correctness, readability, and comprehensiveness of answers, the effectiveness of providing grading examples to LLM judges, the recommendation for grading scales, and the applicability of evaluation metrics across different use cases.",article.txt
-what is there article's improvement on the origional Imsys paper prompt,"
-The article improves on the original lmsys paper prompt by adapting it to explicitly emit metrics about correctness, comprehensiveness, and readability, and prompts the judge to provide a justification for each score. This adaptation includes both zero-shot and few-shot versions, with the few-shot version providing explicit examples for each score, thereby aiming to increase the consistency and reliability of the LLM judge's grading results.",article.txt
+question,answer
+What is MLflow?,"MLflow is an open-source platform for managing the end-to-end machine learning lifecycle, including experiment tracking, model management, and serving."
+How does useEffect() work?,"The useEffect() hook tells React that your component needs to do something after render. React will remember the function you passed (we'll refer to it as our “effect”), and call it later after performing the DOM updates."
